@@ -2,45 +2,31 @@ import telebot
 import sqlite3
 import re
 from telebot import types
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import random
 import pandas as pd
 import pytz
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 from multiprocessing import *
 from functools import wraps
-import math
+import threading
+import atexit
+
+# def exit_handler():
+#     # Код, который будет выполняться перед выходом из программы
+#     bot.send_message(158079043, 'Программа завершила выполнение из-за ошибки или прерывания')
+# atexit.register(exit_handler)
 
 
-token = ''
-bot = telebt.TeleBot(token)
-password = '123'
-sum_users = 0
-url_pattern = r"https://\S+"
+token = '6724776824:AAElnolJgOrq6IU8_c3vJc2aSBwMhwgElcM'
+bot = telebot.TeleBot(token)
+password = 'abakan2023'
+registration_data = {}
 
-def save_stats_in_table():
-  db =sqlite3.connect('db.sql')
-  query = f'SELECT * FROM Users_links'
-  df = pd.read_sql_query(query, db)
-  db.close()
-  output_excel_file = 'stats.xlsx'
-  df.to_excel(output_excel_file, index=False, engine='openpyxl')
+bot.send_message(158079043, 'Бот включился')
 
-  file = open('stats.xlsx','rb')
-  bot.send_document(158079043, file)
-
-def save_users_in_table():
-  db =sqlite3.connect('db.sql')
-  query = f'SELECT * FROM users'
-  df = pd.read_sql_query(query, db)
-  db.close()
-  output_excel_file = 'users.xlsx'
-  df.to_excel(output_excel_file, index=False, engine='openpyxl')
-
-  file = open('users.xlsx','rb')
-  bot.send_document(158079043, file)
-
-
+"""СОЗДАНИЕ БАЗЫ ДАННЫХ"""
 # Создание базы данных с участниками марафона
 def database():
    db = sqlite3.connect('db.sql')
@@ -49,8 +35,23 @@ def database():
    # id - номер участника [int auto_increment primary key]
    # name - имя и фамилия
    # link - ссылка на отзыв 
-   cur.execute('CREATE TABLE if NOT EXISTS users(id_user varchar(30), name varchar(50), company varchar(100), type varchar(100), link varchar(256), reg_datetime varchar(50))')
-   db.execute(f'CREATE table if not EXISTS Users_links (id_user, name, link, stream, wait, successfully)')
+   cur.execute('''CREATE TABLE if NOT EXISTS users (id_user varchar(30), 
+                                                    name varchar(50), 
+                                                    company varchar(100), 
+                                                    type varchar(100), 
+                                                    link_1 varchar(256), 
+                                                    link_2 varchar(256), 
+                                                    reg_datetime varchar(50))''')
+   db.execute(f'''CREATE table if not EXISTS Users_links (id_user, 
+                                                          name, 
+                                                          link, 
+                                                          stream, 
+                                                          wait, 
+                                                          successfully)''')
+   cur.execute('''CREATE TABLE IF NOT EXISTS ProcessingState (
+               id INTEGER PRIMARY KEY,
+               current_user_id TEXT
+               )''')
    db.commit()
    db.close()
 database()
@@ -71,39 +72,34 @@ def add_user(id_user, user):
   cur.execute("INSERT INTO users(id_user, name, company, type, link, reg_datetime) VALUES (?, ?, ?, ?, ?, ?)", (id_user, name_user, company_user, type_company_user, link_user, current_time_str))
   db.commit()
   db.close()
+"""СОЗДАНИЕ БАЗЫ ДАННЫХ"""
 
-def check_table():
-  # db = sqlite3.connect('db.sql')
-  # cur = db.cursor()
-  # cur.execute("CREATE TABLE if NOT EXISTS check(id_user integer, name text, link text)")
-  # cur.execute("INSERT into check (id_user, name, link) SELECT")
-  pass
+
 
 # Приветственное сообщение на команду /start
 @bot.message_handler(commands=['start'])
 def start(message):
-  markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-  button_1 = types.KeyboardButton("👋 Поздороваться")
-  markup.add(button_1)
-  bot.send_message(message.chat.id, '👋 Здравствуйте, '+ message.from_user.first_name +', я бот для проведения марафона отзывов.', reply_markup=markup)
+  #markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+  #button_1 = types.KeyboardButton("👋 Поздороваться")
+  #markup.add(button_1)
+  input_pass = bot.send_message(message.chat.id, '👋 Здравствуйте, '+ message.from_user.first_name +', я бот для проведения марафона отзывов.' + 
+                   '\n\n' + 'Для доступа к боту в сообщении текстом отправьте мне пароль, который вы получили.')
+  if message.chat.id == 158079043:
+      bot.send_message(158079043, 'Привет, удачной работы :)')
+  else:
+      bot.register_next_step_handler(input_pass, verification)
 
 # Обработка остальных команд и текста 
 @bot.message_handler(content_types=['text'])
 def func(message):
   if message.text == "👋 Поздороваться":
-    markup = types.ReplyKeyboardRemove()
-    input_pass = bot.send_message(message.chat.id, 'Теперь в сообщении текстом отправьте мне пароль, который вы получили для доступа к марафону.', reply_markup=markup)
-    bot.register_next_step_handler(input_pass, verification)
+    # markup = types.ReplyKeyboardRemove()
+    # input_pass = bot.send_message(message.chat.id, 'Для доступа к боту в сообщении текстом отправьте мне пароль, который вы получили для доступа к марафону.', reply_markup=markup)
+    # bot.register_next_step_handler(input_pass, verification)
+    pass
   elif message.text == "Зарегистрироваться":
-    markup = types.ReplyKeyboardRemove()
-    bot.send_message(message.chat.id, '❗️ Пожалуйста включите уведомления и звук от бота если они не включены. В специальное время от бота будет приходить сообщение с ссылкой на сервис, на который необходимо будет оставить отзыв.'
-                     + "\n\n" + 'Для регистрации в марафоне отправьте сообщение в следующем формате: Имя,Название организации,Вид_деятельности,[ссылка на карточку организации]'
-                     + "\n" + 'Перечисление обязательно через запятую и без пробела после запятой❗️'
-                     + "\n\n" + 'Примеры сообщения:')
-    reg = bot.send_message(message.chat.id, 'Иван,Яндекс,Реклама и IT услуги,https://yandex.ru/profile/93247744409'
-                           + "\n" + 'или'
-                           + "\n" + 'Александр,Перцы,Деятельность по предоставлению продуктов питания и напитков,https://go.2gis.com/mqrfv', reply_markup=markup)
-    bot.register_next_step_handler(reg, validation_form)
+    # registration(message)
+    pass
   elif message.text == "/startmarathon":
     if message.from_user.id == 158079043:
       startmarathon()
@@ -112,7 +108,7 @@ def func(message):
   elif message.text == "/startspam":
     if message.from_user.id == 158079043:
       start_engine()
-      bot.send_message(158079043, 'Началась отправка собщений')
+      bot.send_message(158079043, '<code>[Началась отправка собщений]</code>')
     else:
       bot.send_message(message.chat.id, 'Это команда для администратора бота.')
   elif message.text == "/cleardb":
@@ -135,60 +131,18 @@ def func(message):
       save_users_in_table()
     else:
       bot.send_message(message.chat.id, 'Это команда для администратора бота.')
-  elif re.search(url_pattern, message.text):
-    delete_from_wait(message.chat.id, message.text)
+  elif message.text == "/first_cycle":
+    if message.from_user.id == 158079043:
+      first_cycle()
+    else:
+      bot.send_message(message.chat.id, 'Это команда для администратора бота.')
   else:
     bot.send_message(message.chat.id, 'Извините, я вас не понимаю :('
                      + "\n\n" + 'Если у вас есть вопросы или помощь по работе бота то напишите администратору @ahydrogen')
 
-def delete_from_wait(id_user,url_del):
-  db = sqlite3.connect('db.sql')
-  cur = db.cursor()
-  cur.execute("SELECT wait FROM Users_links WHERE id_user = ?", (id_user,))
-  wait_str = cur.fetchone()[0]
-  new_wait_str = wait_str.replace(url_del+'|', '')
-  cur.execute("UPDATE Users_links SET wait = ? WHERE id_user = ?", (new_wait_str, id_user))
 
-  krasnoyarsk_tz = pytz.timezone('Asia/Krasnoyarsk')
-  current_time_krasnoyarsk = datetime.now(krasnoyarsk_tz)
-  current_time_str = current_time_krasnoyarsk.strftime('%Y-%m-%d %H:%M:%S')
-  cur.execute("SELECT successfully FROM Users_links WHERE id_user = ?", (id_user,))
-  successfully_str = cur.fetchone()[0]
-  successfully_str = successfully_str+str(url_del)+' '+'['+current_time_str+']'+'|'
-  cur.execute("UPDATE Users_links SET successfully = ? WHERE id_user = ?", (successfully_str, id_user))
-  db.commit()
-  db.close()
-  bot.send_message(id_user, 'Спасибо за участие в марафоне! Ожидайте следующего сообщения с ссылкой 😉')
 
-def stopspam():
-  global stop_flag
-  stop_flag = True
-  bot.send_message(158079043, 'Рассылка остановлена.')
-
-def stopmarathon():
-  pass #написать рассылку всем об окончании марафона
-  
-# Валидация пароля
-def verification(message):
-  if message.text == password:
-      markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-      button_2 = types.KeyboardButton("Зарегистрироваться")
-      markup.add(button_2)
-      bot.send_message(message.chat.id, '✅ Отлично! Пароль введен верно. Теперь необходимо зарегистрироваться, для этого нажмите на кнопку ниже.', reply_markup=markup)
-  else:
-      wrong_pass = bot.send_message(message.chat.id, '❌ Неверный пароль')
-      bot.register_next_step_handler(wrong_pass, verification)
-
-# Регистрация Имя Фамилия ссылка
-def validation_form(message):
-  pattern = r'^[А-ЯЁа-яёa-zA-Z]+,[А-ЯЁа-яёa-zA-Z0-9]+,[^,]+,(https?://[^\s,]+)$'
-  if re.match(pattern, message.text):
-    bot.send_message(message.chat.id, 'Регистрация прошла успешно! Когда все участники зарегистрируются вам придёт сообщение о старте марафона.')
-    add_user(message.from_user.id, message.text)
-  else:
-    wrong_reg = bot.send_message(message.chat.id, 'Неверный формат сообщения, проверьте соответсвие шаблону.')
-    bot.register_next_step_handler(wrong_reg, validation_form)
-
+"""КОМАНДЫ ДЛЯ МЕНЯ"""
 # Команда для начала марафона
 def startmarathon():
   db = sqlite3.connect('db.sql')
@@ -199,175 +153,477 @@ def startmarathon():
   for i in range(len(arr)):
     bot.send_message(int(arr[i][0]), 'Марафон начался!')
   db.close()
-  
 
+# Очистить БД
+def cleardb():
+  db = sqlite3.connect('db.sql')
+  cur = db.cursor()
+  cur.execute("DELETE FROM users")
+  cur.execute("DELETE FROM Users_links")
+  db.commit()
+  db.close()
+  bot.send_message(158079043, 'База данных очищена')
+
+# Остановить спам
+def stopspam():
+  global stop_flag
+  stop_flag = True
+  bot.send_message(158079043, 'Рассылка остановлена.')
+
+# Уведомление всем об окончании марафона
+def stopmarathon():
+  db = sqlite3.connect('db.sql')
+  cur = db.cursor()
+  cur.execute('SELECT id_user FROM users')
+  arr = cur.fetchall()
+  db.close()
+  for i in range(len(arr)):
+    bot.send_message(int(arr[i][0]), 'Марафон закончен, всем спасибо за участие!')
+
+# Вывод таблицы users
+def save_stats_in_table():
+  db = sqlite3.connect('db.sql')
+  query = f'SELECT * FROM Users_links'
+  df = pd.read_sql_query(query, db)
+  db.close()
+  
+  output_excel_file = 'stats.xlsx'
+  df.to_excel(output_excel_file, index=False, engine='openpyxl')
+
+  file = open('stats.xlsx','rb')
+  bot.send_document(158079043, file)
+  file = open('db.sql','rb')
+  bot.send_document(158079043, file)
+
+# Вывод таблицы Users_links
+def save_users_in_table():
+  db = sqlite3.connect('db.sql')
+  query = f'SELECT * FROM users'
+  df = pd.read_sql_query(query, db)
+  db.close()
+  
+  output_excel_file = 'users.xlsx'
+  df.to_excel(output_excel_file, index=False, engine='openpyxl')
+
+  file = open('users.xlsx','rb')
+  bot.send_document(158079043, file)
+"""КОМАНДЫ ДЛЯ МЕНЯ"""
+
+
+
+"""РЕГИСТРАЦИЯ ПОЛЬЗОВАТЕЛЯ"""
+# Валидация пароля
+def verification(message):
+  if message.text == password:
+      markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+      button_2 = types.KeyboardButton("Зарегистрироваться")
+      markup.add(button_2)
+      bot.send_message(message.chat.id, '✅ Отлично! Пароль введен верно. Теперь давайте зарегистрируемся 😃', reply_markup=markup)
+      registration(message)
+  else:
+      wrong_pass = bot.send_message(message.chat.id, '❌ Неверный пароль')
+      bot.register_next_step_handler(wrong_pass, verification)
+
+# Регистрация
+def registration(message):
+    markup = types.ReplyKeyboardRemove()
+    chat_id = message.chat.id
+    bot.send_message(chat_id, "Для начала, пожалуйста, напишите мне свое имя:", reply_markup=markup)
+    bot.register_next_step_handler(message, ask_name)
+
+def ask_name(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    name = message.text
+    registration_data[user_id] = {'name': name}
+    bot.send_message(chat_id, "Отлично, теперь напишите название организации:")
+    bot.register_next_step_handler(message, ask_company_name)
+
+def ask_company_name(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    company_name = message.text
+    registration_data[user_id]['company_name'] = company_name
+    bot.send_message(chat_id, "Хорошо, теперь укажите сферу вашей организации:")
+    bot.register_next_step_handler(message, ask_company_field)
+
+def ask_company_field(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    company_field = message.text
+    registration_data[user_id]['company_field'] = company_field
+    bot.send_message(chat_id, "Отлично, теперь отправьте только ссылку на карточку вашей организации без лишнего текста, например:"+
+                     "\n" + 'https://yandex.ru/profile/239139382678')
+    bot.register_next_step_handler(message, ask_first_company_link)
+
+def ask_first_company_link(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    company_link = message.text
+    registration_data[user_id]['company_link'] = company_link
+
+    # Устанавливаем флаг, чтобы помнить, что первая ссылка уже получена
+    registration_data[user_id]['first_link_received'] = True
+
+    bot.send_message(chat_id, "Записали первую ссылку. Теперь отправьте мне вторую ссылку.")
+    bot.register_next_step_handler(message, ask_second_company_link)
+
+def ask_second_company_link(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    if 'first_link_received' in registration_data[user_id] and registration_data[user_id]['first_link_received']:
+        company_link_optional = message.text
+
+        if company_link_optional.lower() == "отсутствует":
+            company_link_optional = None
+
+        registration_data[user_id]['company_link_optional'] = company_link_optional
+
+        krasnoyarsk_tz = pytz.timezone('Asia/Krasnoyarsk')
+        current_time_krasnoyarsk = datetime.now(krasnoyarsk_tz)
+        current_time_str = current_time_krasnoyarsk.strftime('%Y-%m-%d %H:%M:%S')
+
+        user_data = registration_data[user_id]
+        db = sqlite3.connect('db.sql')
+        cur = db.cursor()
+        cur.execute("INSERT INTO users (id_user, name, company, type, link_1, link_2, reg_datetime) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (user_id, user_data['name'], user_data['company_name'], user_data['company_field'], user_data['company_link'], user_data.get('company_link_optional', None), current_time_str))
+        db.commit()
+
+        bot.send_message(chat_id, "Спасибо за регистрацию! Ваши данные сохранены. Когда все участники зарегистрируются вам придёт сообщение о старте марафона.")
+        del registration_data[user_id]
+    else:
+        bot.send_message(chat_id, "Пожалуйста, сначала отправьте первую ссылку.")
+"""РЕГИСТРАЦИЯ ПОЛЬЗОВАТЕЛЯ"""  
+
+
+
+"""НАЧАЛО МАРАФОНА"""
 # Создание матрицы участников
 def matrix():
   db = sqlite3.connect('db.sql')
   cur = db.cursor()
-  cur.execute('SELECT link FROM users')
-  link = cur.fetchall()
-  links = []
+  cur.execute("PRAGMA table_info(users)")
+  columns = [column[1] for column in cur.fetchall()]
+  if 'link_conc' not in columns:
+      # Если столбец не существует, добавить его
+      cur.execute('ALTER TABLE users ADD COLUMN link_conc TEXT')
+  cur.execute("UPDATE users SET link_conc = '|' || link_1 || ' ' || link_2 || '|'")
+  if 'stream' not in columns:
+    cur.execute('ALTER TABLE users ADD COLUMN stream varchar(256)')
+  cur.execute('UPDATE users SET stream = NULL')
+  cur.execute('DELETE FROM Users_links')
 
-  
-  for i in range(len(link)):
-     links.append(link[i][0])
-  links.reverse()
-  
-  cur.execute('SELECT * FROM users') 
-  users = cur.fetchall()
 
-  matrixx = pd.DataFrame(columns=['id_user', 'name', 'company', 'type', 'link', 'stream', 'wait', 'successfully'])
-  for i in range(len(users)):
+  cur.execute('SELECT id_user FROM users')
+  user_ids = [row[0] for row in cur.fetchall()]
+
+  for user_id in user_ids:
+      # Получить список всех пользователей, кроме текущего пользователя
+      other_user_ids = [uid for uid in user_ids if uid != user_id]
       
-      random.shuffle(links)
-      stream = ' '.join(links)
-      stream = str(stream)
-      #print(stream)
-      stream = stream.replace(users[i][4], " ")
-
+      # Получите значения link_conc для других пользователей и объедините их в строку
+      stream_values = []
+      for other_user_id in other_user_ids:
+          cur.execute('SELECT link_conc FROM users WHERE id_user = ?', (other_user_id,))
+          link_conc_value = cur.fetchone()[0]
+          stream_values.append(link_conc_value)
       
+      # Создать строку stream для текущего пользователя, объединяя значения других пользователей
+      stream = '|'.join(stream_values)
 
+      stream = stream.replace('|||', '|')
       
-      if stream[-1] == ' ':
-        stream_inp = stream[:-1]
-        list = [users[i][0], users[i][1], users[i][2], users[i][3], users[i][4], stream_inp, "|", "|"]
-        matrixx.loc[len(matrixx)] = list
-      else:
-        list = [users[i][0], users[i][1], users[i][2], users[i][3], users[i][4], stream, "|", "|"]
-        matrixx.loc[len(matrixx)] = list
-      # print('-------------')
-      # print(stream)
-  db.execute(f'CREATE table if not EXISTS Users_links (id_user, name, company, type, link, stream, wait, successfully)')
-  matrixx.to_sql('Users_links', db, if_exists='replace')
+      # Обновить значение stream для текущего пользователя в таблице
+      cur.execute('UPDATE users SET stream = ? WHERE id_user = ?', (stream, user_id))
+
   db.commit()
-  #print(matrix)
-  
   db.close()
+  randomize()
+  perenos()
 
+def randomize():
+  import sqlite3
 
-def spam():
-  
+  def shift_elements_forward(stream_value, shift):
+      stream_value = stream_value.strip('|')
+      elements = stream_value.split('|')
+
+      # Сдвигаем элементы на указанное количество позиций вперед
+      shifted_elements = [elements[(i + shift) % len(elements)] for i in range(len(elements))]
+
+      new_stream_value = '|'.join(shifted_elements)
+      return new_stream_value
+
   db = sqlite3.connect('db.sql')
   cur = db.cursor()
-  cur.execute('SELECT id_user FROM users')
-  ids = cur.fetchall()
-  id_arr = []
-  for i in range(len(ids)):
-     id_arr.append(ids[i][0])
+  cur.execute("SELECT id_user, stream FROM users")
+  user_streams = cur.fetchall()
 
-  for id in id_arr:
+  shift = 0 
 
+  for user_id, stream_value in user_streams:
+      new_stream_value = shift_elements_forward(stream_value, shift)
+
+      # Обновляем значение столбца stream для текущего пользователя
+      cur.execute("UPDATE users SET stream = ? WHERE id_user = ?", (new_stream_value, user_id))
+      db.commit()
+
+      shift += 1
+
+  db.close()
+
+def perenos():
+  import sqlite3
+
+
+  db = sqlite3.connect('db.sql')
+  cur = db.cursor()
+
+  try:
+      cur.execute("SELECT id_user, name, link_conc, stream FROM users")
+      data_to_insert = cur.fetchall()
+
+      for row in data_to_insert:
+          id_user, name, link_conc, stream = row
+          cur.execute("INSERT INTO Users_links (id_user, name, link, stream, wait, successfully) VALUES (?, ?, ?, ?, ?, ?)",
+                      (id_user, name, link_conc, stream, "", ""))
+
+      db.commit()
+      print("Данные успешно перенесены из таблицы 'users' в таблицу 'Users_links'.")
+
+  except sqlite3.Error as e:
+      print(f"Произошла ошибка при переносе данных: {e}")
+
+  finally:
+      db.close()
+"""НАЧАЛО МАРАФОНА"""
+
+
+
+"""ПЕРВЫЙ ЦИКЛ СПАМА"""
+def first_cycle():
     db = sqlite3.connect('db.sql')
     cur = db.cursor()
-    query = "SELECT stream FROM Users_links WHERE id_user = ?"
-    cur.execute(query, (id,))
-    result = cur.fetchone()
-
-    result = result[0].split(" ")
-    
-    try:
-      while True:
-        result.remove("")
-    except ValueError:
-        pass  
-          
-    if len(result) > 0:
-      bot.send_message(id, '📣 Ссылка для отзыва: ' + result[-1])
-
-      # krasnoyarsk_tz = pytz.timezone('Asia/Krasnoyarsk')
-      # current_time_krasnoyarsk = datetime.now(krasnoyarsk_tz)
-      # current_time_str = current_time_krasnoyarsk.strftime('%Y-%m-%d %H:%M:%S')
-
-      query = "SELECT wait from Users_links WHERE id_user = ?"
-      cur.execute(query, (id,))
-      wait_queue = cur.fetchone()
-      wait_queue = wait_queue[0]+str(result[-1])+'|'
-      
-      cur.execute("UPDATE Users_links SET wait = ? WHERE id_user = ?", (wait_queue, id))
-
-      bot.send_message(id, '❗️ Обязательно после того как оставите отзыв скопируйте ссылку и отправьте её в ответ боту чтобы подтвердить своё участие в марафоне.')
-      
-      result.pop(-1)
-      out = ' '.join(result)
-      # out загрузить заместо этого stream
-      query = "UPDATE Users_links SET stream = ? WHERE id_user = ?"
-      cur.execute(query, (out, id))
-      db.commit()
-      db.close()
-      time.sleep(round(math.random(32400,43200)/len(id_arr)))
-    else:
-      bot.send_message(158079043, 'Марафон закончен, выключи его')
-      time.sleep(10) 
+    cur.execute('SELECT id_user FROM users')
+    ids = cur.fetchall()
     db.close()
-# bot_messages = {}
-# def spam():
-#     db = sqlite3.connect('db.sql')
-#     cur = db.cursor()
-#     cur.execute('SELECT id_user FROM users')
-#     ids = cur.fetchall()
-#     id_arr = [row[0] for row in ids]
+    id_arr = [str(id[0]) for id in ids]
+    # # Получить id текущего пользователя из таблицы состояния
+    # db = sqlite3.connect('db.sql')
+    # cur = db.cursor()
+    # cur.execute("SELECT current_user_id FROM ProcessingState")
+    # current_user_id = cur.fetchone()
+    # db.close()
 
-#     for id in id_arr:
-#         db = sqlite3.connect('db.sql')
-#         cur = db.cursor()
-#         query = "SELECT stream FROM Users_links WHERE id_user = ?"
-#         cur.execute(query, (id,))
-#         result = cur.fetchone()
+    # # Найти индекс текущего пользователя в списке id_arr
+    # if current_user_id:
+    #     current_user_id = current_user_id[0]
+    #     current_user_index = id_arr.index(current_user_id)
+    # else:
+    #     current_user_index = 0
 
-#         result = result[0].split(" ")
+    random.shuffle(id_arr)
+    #print(id_arr)
+    count = 0
+    for id in id_arr:
+        count += 1
+        bot.send_message(158079043,'✅ ' + str(count) + 'й Получил сообщение '+'id['+str(id)+']')
 
-#         try:
-#             while True:
-#                 result.remove("")
-#         except ValueError:
-#             pass
+        db = sqlite3.connect('db.sql')
+        cur = db.cursor()
+        cur.execute("SELECT wait FROM Users_links WHERE id_user = ?", (id,))
+        wait = cur.fetchone()
 
-#         if len(result) > 0:
-#             link_message = '📣 Ссылка для отзыва: ' + result[-1]
-#             bot.send_message(id, link_message)
+        if wait and not wait[0]:
+            cur.execute("SELECT stream FROM Users_links WHERE id_user = ?", (id,))
+            result = cur.fetchone()
 
-#             krasnoyarsk_tz = pytz.timezone('Asia/Krasnoyarsk')
-#             current_time_krasnoyarsk = datetime.now(krasnoyarsk_tz)
-#             current_time_str = current_time_krasnoyarsk.strftime('%Y-%m-%d %H:%M:%S')
+            if result and result[0] != "":
+                result = result[0].split("|")
+                # print(result)
+                out = result[-1].split(" ")
 
-#             query = "SELECT wait from Users_links WHERE id_user = ?"
-#             cur.execute(query, (id,))
-#             wait_queue = cur.fetchone()
-#             wait_queue = wait_queue[0] + str(result[-1]) + '[' + current_time_str + ']' + '|'
+                if len(result) > 0:
+                    keyboard = types.InlineKeyboardMarkup()
+                    button = types.InlineKeyboardButton('ОТЗЫВЫ ОСТАВЛЕНЫ', callback_data=f"button_pressed_{id}")
+                    keyboard.add(button)
+                    # print(out)
+                    bot.send_message(id, '📣📣📣📣📣📣📣📣📣' + '\n' + 'Новые ссылки для отзыва: ' + '\n\n' + out[0] + '\n\n' + out[1] + '\n\n' + 
+                                     'Нажмите на кнопку снизу только после того как оставите оба отзыва.', reply_markup=keyboard)
+                    
+                    cur.execute("SELECT wait from Users_links WHERE id_user = ?", (id,))
+                    wait_queue = cur.fetchone()
+                    wait_queue = wait_queue[0] + str(out[0])+' '+str(out[1])
+                    cur.execute("UPDATE Users_links SET wait = ? WHERE id_user = ?", (wait_queue, id))
 
-#             cur.execute("UPDATE Users_links SET wait = ? WHERE id_user = ?", (wait_queue, id))
+                    # bot.send_message(id, '⬆️⬆️⬆️ ')
+                    
+                    
+                    
+                    
+                    result.pop(-1)
+                    
+                        
+                    result = '|'.join(result)
 
-#             # Сохраняем сообщение бота для пользователя в словаре
-#             bot_messages[id] = '❗️ Обязательно после того как оставите отзыв нажмите на кнопку подтверждения ниже.'
+                    cur.execute("UPDATE Users_links SET stream = ? WHERE id_user = ?", (result, id))
+                    db.commit()
+                    time.sleep(5)
+                else:
+                    pass
+                    # bot.send_message(id, 'Вы завершили марафон, поздравляем! Чтобы эти сообщения больше не приходили заблокируйте бота сверху в настройках :)')
+            else:
+                bot.send_message(158079043, '❕ ' + str(count) + 'й уже закончил марафон '+'id['+str(id)+']')
+                time.sleep(5)
+                #pass
+            db.close()
+        else:
+            bot.send_message(id, 'Вы проспустили или не подтвердили предыдущий отзыв отправленный вам выше ⬆️⬆️⬆️, напишите отзыв и подтвердите его нажатием на кнопку пожалуйста.')
+            time.sleep(5)
+    bot.send_message(158079043, '✅ Первый цикл спама окончен')
 
-#             # Создание кнопки подтверждения
-#             inline_keyboard = types.InlineKeyboardMarkup()
-#             button = types.InlineKeyboardButton('Подтвердите то, что оставили отзыв по ссылке выше', callback_data=str(id))
-#             inline_keyboard.add(button)
-#             bot.send_message(id, bot_messages[id], reply_markup=inline_keyboard)
+"""ПЕРВЫЙ ЦИКЛ СПАМА"""
 
-#             result.pop(-1)
-#             out = ' '.join(result)
-#             # out загрузить заместо этого stream
-#             query = "UPDATE Users_links SET stream = ? WHERE id_user = ?"
-#             cur.execute(query, (out, id))
-#             db.commit()
-#             db.close()
-#             time.sleep(30/len(id_arr))
-#         else:
-#             bot.send_message(158079043, 'Марафон закончен')
-#             time.sleep(10)
-#         db.close()
 
-# @bot.callback_query_handler(func=lambda call: call.data.isdigit())
-# def handle_button_click(call):
-#     user_id = int(call.data)
-#     if user_id in bot_messages:
-#         bot.send_message(user_id, "Вы нажали кнопку!")
-#         print("Пользователь с ID {} нажал кнопку с сообщением бота: {}".format(user_id, bot_messages[user_id]))
-#         del bot_messages[user_id]  # Удаляем сохраненное сообщение бота
 
+"""СПАМ ФУНКЦИЯ"""
+def spam():
+    db = sqlite3.connect('db.sql')
+    cur = db.cursor()
+    cur.execute('SELECT id_user FROM users')
+    ids = cur.fetchall()
+    db.close()
+    id_arr = [str(id[0]) for id in ids]
+
+    current_time = datetime.now()
+    target_time = current_time.replace(hour=20, minute=0, second=0, microsecond=0)
+    if current_time >= target_time:
+        target_time += timedelta(days=1)
+    time_difference = target_time - current_time
+    seconds_until_9pm = int(time_difference.total_seconds())
+
+    # # Получить id текущего пользователя из таблицы состояния
+    # db = sqlite3.connect('db.sql')
+    # cur = db.cursor()
+    # cur.execute("SELECT current_user_id FROM ProcessingState")
+    # current_user_id = cur.fetchone()
+    # db.close()
+
+    # # Найти индекс текущего пользователя в списке id_arr
+    # if current_user_id:
+    #     current_user_id = current_user_id[0]
+    #     current_user_index = id_arr.index(current_user_id)
+    # else:
+    #     current_user_index = 0
+    
+    random.shuffle(id_arr)
+    #print(id_arr)
+    count = 0
+    for id in id_arr:
+        count += 1
+        bot.send_message(158079043, '✅ ' + str(count) + 'й Получил сообщение '+'id['+str(id)+']')
+
+        db = sqlite3.connect('db.sql')
+        cur = db.cursor()
+        cur.execute("SELECT wait FROM Users_links WHERE id_user = ?", (id,))
+        wait = cur.fetchone()
+
+        if wait and not wait[0]:
+            cur.execute("SELECT stream FROM Users_links WHERE id_user = ?", (id,))
+            result = cur.fetchone()
+
+            if result and result[0] != "":
+                result = result[0].split("|")
+                out = result[-1].split(" ")
+
+                if len(result) > 0:
+                    keyboard = types.InlineKeyboardMarkup()
+                    button = types.InlineKeyboardButton('ОТЗЫВЫ ОСТАВЛЕНЫ', callback_data=f"button_pressed_{id}")
+                    keyboard.add(button)
+                    bot.send_message(id, '📣📣📣📣📣📣📣📣📣' + '\n' + 'Новые ссылки для отзыва: ' + '\n\n' + out[0] + '\n\n' + out[1] + '\n\n' + 
+                                     'Нажмите на кнопку снизу только после того как оставите оба отзыва.', reply_markup=keyboard)
+
+                    cur.execute("SELECT wait from Users_links WHERE id_user = ?", (id,))
+                    wait_queue = cur.fetchone()
+                    wait_queue = wait_queue[0] + str(out[0])+' '+str(out[1])
+                    cur.execute("UPDATE Users_links SET wait = ? WHERE id_user = ?", (wait_queue, id))
+
+                    # bot.send_message(id, '⬆️⬆️⬆️ Нажмите на эту кнопку только после того как оставите оба отзыва.')
+                    
+
+
+                    result.pop(-1)
+                    result = '|'.join(result)
+
+                    cur.execute("UPDATE Users_links SET stream = ? WHERE id_user = ?", (result, id))
+                    db.commit()
+
+                    # Добавляем задержку перед отправкой следующего сообщения
+                    ft = int((seconds_until_9pm - (seconds_until_9pm / 8)) / len(id_arr))
+                    st = int(seconds_until_9pm / len(id_arr))
+                    waiting = random.randint(ft, st)
+                    bot.send_message(158079043, '🕘 ' + str(count+1) + 'й пользователь получит сообщение'+' через ' + str("{:0>8}".format(str(timedelta(seconds=waiting)))))
+                    time.sleep(waiting)
+                else:
+                    bot.send_message(id, 'Вы завершили марафон, поздравляем!!! Чтобы эти сообщения больше не приходили заблокируйте бота сверху в настройках :)')
+            else:
+                bot.send_message(158079043, '❕ ' + str(count) + 'Уже закончил марафон '+'id['+str(id)+']')
+            db.close()
+        else:
+            bot.send_message(id, 'Вы проспустили или не подтвердили предыдущий отзыв отправленный вам выше ⬆️⬆️⬆️, напишите отзыв и подтвердите его нажатием на кнопку пожалуйста.')
+            #time.sleep(5)
+            # current_time = datetime.now()
+            # target_time = current_time.replace(hour=20, minute=0, second=0, microsecond=0)
+            # if current_time >= target_time:
+            #   target_time += timedelta(days=1)
+            # time_difference = target_time - current_time
+            # seconds_until_9pm = int(time_difference.total_seconds())
+            #print(seconds_until_9pm)
+            
+            ft = int((seconds_until_9pm - (seconds_until_9pm / 8))/len(id_arr))
+            st = int(seconds_until_9pm / len(id_arr))
+            waiting = (random.randint(ft, st))
+            bot.send_message(158079043, '🕘 ' + str(count+1) + 'й пользователь получит сообщение'+' через ' +  str("{:0>8}".format(str(timedelta(seconds=waiting)))))
+            time.sleep(waiting)
+      
+
+# Обработка нажатий кнопки подтверждения  
+@bot.callback_query_handler(func=lambda call: True)
+def confirmation(call):
+  id = call.from_user.id
+  id = str(id)
+  db = sqlite3.connect('db.sql')
+  cur = db.cursor()
+  cur.execute("SELECT wait FROM Users_links WHERE id_user = ?", (id,))
+  wait = cur.fetchone()[0]
+
+  krasnoyarsk_tz = pytz.timezone('Asia/Krasnoyarsk')
+  current_time_krasnoyarsk = datetime.now(krasnoyarsk_tz)
+  current_time_str = current_time_krasnoyarsk.strftime('%Y-%m-%d %H:%M:%S')
+  cur.execute("SELECT successfully FROM Users_links WHERE id_user = ?", (id,))
+  successfully_str = cur.fetchone()[0]
+  successfully_str = successfully_str+' '+str(wait)+' '+'['+current_time_str+']'+' '+'|'
+  cur.execute("UPDATE Users_links SET successfully = ? WHERE id_user = ?", (successfully_str, id))
+  wait = ""
+  cur.execute("UPDATE Users_links SET wait = ? WHERE id_user = ?", (wait, id))
+  db.commit()
+  
+  cur.execute("SELECT stream FROM Users_links WHERE id_user = ?", (id,))
+  result = cur.fetchone()
+  result = result[0].split(" ")
+      
+  try:
+    while True:
+      result.remove("")
+  except ValueError:
+    pass
+
+  if len(result)>0:
+    bot.send_message(id, '👍 Вы подтвердили отзывы, спасибо за участие в марафоне! Ожидайте следующего сообщения с ссылками.')
+  else:
+    bot.send_message(id, '🎉🎉 Это была последняя ссылка марафона, спасибо за участие!')
+  db.close()
 
 # Многопоточность для регистрации времени
 def mult_threading(func):
@@ -382,36 +638,74 @@ def mult_threading(func):
     return func_thread
   return wrapper
 
+
+last_spam_time = None
+lock = threading.Lock()
+
+
 @mult_threading
 def start_engine():
   global stop_flag
   stop_flag = False
-  # db = sqlite3.connect('db.sql')
-  # cur = db.cursor()
-  # cur.execute('SELECT id_user FROM users')
-  # ids = cur.fetchall()
-  # id_arr = []
-  # for i in range(len(ids)):
-  #    id_arr.append(ids[i][0])
-  # counter = len(id_arr)
-
   while not stop_flag:
+    # Получить текущее время в Красноярске и извлечь текущий час
     tz = pytz.timezone('Asia/Krasnoyarsk')
     Krasnoyarsk_hour = datetime.now(tz).hour
 
-    if (Krasnoyarsk_hour >= 8) and (Krasnoyarsk_hour <= 20):
+    if 8 <= Krasnoyarsk_hour <= 19:
+        bot.send_message(158079043, '❗️ Спам сегодня запущен')
+ 
         spam()
-    else:
-      time.sleep(60)
+        bot.send_message(158079043, '❗️ Спам сегодня закончен')
 
-def cleardb():
-  db = sqlite3.connect('db.sql')
-  cur = db.cursor()
-  cur.execute("DELETE FROM users")
-  cur.execute("DELETE FROM Users_links")
-  db.commit()
-  db.close()
-  bot.send_message(158079043, 'База данных почищена')
+        # Получить текущее время в Красноярске
+        current_time_krasnoyarsk = datetime.now(tz)
+
+        # Вычислить дату и время для завершения ожидания
+        next_day = current_time_krasnoyarsk.replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        sleep_time = next_day.strftime("%H:%M, %d %B")
+
+        # сообщение о том, что бот отправляется спать до указанного времени и даты
+        bot.send_message(158079043, '🕘 ' + f'Бот отправляется спать до {sleep_time}')
+
+        # Вычислить время ожидания до следующего события
+        time_to_wait = (next_day - current_time_krasnoyarsk).total_seconds()
+
+        # Подождать до указанного времени
+        time.sleep(round(time_to_wait))
+    else:
+        if 0 <= Krasnoyarsk_hour < 8:
+            # Вычислить время ожидания до 9:00 утра текущего дня
+            current_time_krasnoyarsk = datetime.now(tz)
+            next_day = current_time_krasnoyarsk.replace(hour=9, minute=0, second=0, microsecond=0)
+            sleep_time = next_day.strftime("%H:%M, %d %B")
+            time_to_wait = (next_day - current_time_krasnoyarsk).total_seconds()
+
+            # Если текущее время уже больше или равно 9:00 утра, то ждать не нужно
+            if time_to_wait > 0:
+                # Ожидаем до 9:00 утра текущего дня
+                bot.send_message(158079043, '🕘 ' + f'Бот отправляется спать до {sleep_time}')
+                time.sleep(round(time_to_wait))
+            # spam()
+            
+            
+        else:
+            current_time_krasnoyarsk = datetime.now(tz)
+            next_day = current_time_krasnoyarsk.replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=1)
+            sleep_time = next_day.strftime("%H:%M, %d %B")
+
+            # сообщение о том, что бот отправляется спать до указанного времени и даты
+            bot.send_message(158079043, '🕘 ' + f'Бот отправляется спать до {sleep_time}')
+
+            time_to_wait = (next_day - current_time_krasnoyarsk).total_seconds()
+            time.sleep(round(time_to_wait))
+
+"""СПАМ ФУНКЦИЯ"""
+
+
+
+
 
 if __name__ == '__main__':
-  bot.polling(none_stop=True)
+  # bot.polling(none_stop=True, timeout=60)
+  bot.infinity_polling(True)
