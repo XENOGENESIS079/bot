@@ -19,7 +19,7 @@ import atexit
 # atexit.register(exit_handler)
 
 
-token = '6724776824:AAElnolJgOrq6IU8_c3vJc2aSBwMhwgElcM'
+token = ''
 bot = telebot.TeleBot(token)
 password = 'abakan2023'
 registration_data = {}
